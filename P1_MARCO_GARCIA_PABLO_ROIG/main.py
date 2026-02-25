@@ -4,7 +4,6 @@ from lexer import build_lexer
 
 
 def find_column(text, lexpos):
-    """Calcula la columna (base 0) a partir de la posición absoluta del token."""
     last_nl = text.rfind("\n", 0, lexpos)
     if last_nl < 0:
         return lexpos
@@ -12,7 +11,6 @@ def find_column(text, lexpos):
 
 
 def output_path(input_path: str) -> str:
-    """Genera el nombre del archivo de salida .token."""
     base, _ext = os.path.splitext(input_path)
     return base + ".token"
 
