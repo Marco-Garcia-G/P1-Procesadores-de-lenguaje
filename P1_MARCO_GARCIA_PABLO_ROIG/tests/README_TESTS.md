@@ -12,7 +12,7 @@ cd P1_MARCO_GARCIA_PABLO_ROIG/tests
 python3 run_tests.py
 ```
 
-Criterio de exito:
+Exito:
 - Todos los casos deben mostrar `OK`
 - Resumen final: `Summary: 13/13 passed`
 
