@@ -1,0 +1,4 @@
+int whileCount = 0;
+float returnValue = 1.0;
+boolean isnew = false;
+record Data(int x);

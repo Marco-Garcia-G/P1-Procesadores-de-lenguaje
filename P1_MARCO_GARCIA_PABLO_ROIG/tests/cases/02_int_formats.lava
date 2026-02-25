@@ -1,0 +1,4 @@
+int d = 495;
+int b = 0b111101111;
+int o = 0757;
+int h = 0x1EF;

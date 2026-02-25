@@ -1,0 +1,7 @@
+record Planet(float mass, boolean active);
+Planet earth = new Planet(5e1, true);
+if (!earth.active || earth.mass <= 0.0) {
+print('N');
+} else {
+print('Y');
+}

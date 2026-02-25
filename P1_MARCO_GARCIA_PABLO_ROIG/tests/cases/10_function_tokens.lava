@@ -1,0 +1,4 @@
+void move(int a, float b) {
+print(a);
+return;
+}

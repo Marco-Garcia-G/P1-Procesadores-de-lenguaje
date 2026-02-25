@@ -1,0 +1,3 @@
+float a = 100.001;
+float b = 9.87e-2;
+float c = 5e5;

@@ -1,0 +1,4 @@
+record Vector(float x, float y);
+Vector v = new Vector(0, 1);
+float sx = v.x;
+float sy = v.y;

@@ -1,0 +1,4 @@
+char a = 'a';
+char q = '¿';
+boolean on = true;
+boolean off = false;

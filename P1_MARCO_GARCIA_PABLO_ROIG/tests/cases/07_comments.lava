@@ -1,0 +1,5 @@
+int a = 1; // comentario de linea
+/* comentario
+multilinea
+completo */
+int b = 2;
