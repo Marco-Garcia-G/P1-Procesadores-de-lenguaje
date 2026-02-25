@@ -1,0 +1,6 @@
+int a = 28;
+float b = 24.9;
+// Comentario de prueba
+while (a > 0) {
+    break;
+}
