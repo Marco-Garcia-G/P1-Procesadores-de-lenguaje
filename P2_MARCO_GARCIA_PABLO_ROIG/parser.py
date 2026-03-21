@@ -18,6 +18,10 @@ _parser = None
 _parse_errors = []
 
 
+# ---------------------------------------------------------------------------
+# Program
+# ---------------------------------------------------------------------------
+
 def p_program(p):
     "program : program_items_opt"
 
@@ -30,18 +34,20 @@ def p_program_items_opt_many(p):
     "program_items_opt : program_items_opt program_item"
 
 
+# A standalone semicolon is a valid (empty) program item.
 def p_program_item_empty(p):
     "program_item : SEMICOLON"
 
 
 def p_program_item_record(p):
-    "program_item : record_decl semicolons"
+    "program_item : record_decl SEMICOLON"
 
 
 def p_program_item_void_function(p):
     "program_item : VOID ID LPAREN param_list_opt RPAREN block"
 
 
+# type_spec ID can be either a function or a variable declaration/init.
 def p_program_item_typed(p):
     "program_item : type_spec ID typed_program_item_tail"
 
@@ -51,11 +57,12 @@ def p_typed_program_item_tail_function(p):
 
 
 def p_typed_program_item_tail_init(p):
-    "typed_program_item_tail : ASSIGN expression semicolons"
+    "typed_program_item_tail : ASSIGN expression SEMICOLON"
 
 
+# Multi-declaration (id_list_tail may be empty → single declaration).
 def p_typed_program_item_tail_decl(p):
-    "typed_program_item_tail : id_list_tail semicolons"
+    "typed_program_item_tail : id_list_tail SEMICOLON"
 
 
 def p_program_item_control(p):
@@ -63,16 +70,12 @@ def p_program_item_control(p):
 
 
 def p_program_item_simple(p):
-    "program_item : plain_simple_statement semicolons"
+    "program_item : plain_simple_statement SEMICOLON"
 
 
-def p_semicolons_one(p):
-    "semicolons : SEMICOLON"
-
-
-def p_semicolons_many(p):
-    "semicolons : semicolons SEMICOLON"
-
+# ---------------------------------------------------------------------------
+# Record declaration
+# ---------------------------------------------------------------------------
 
 def p_record_decl(p):
     "record_decl : RECORD ID LPAREN field_list_opt RPAREN"
@@ -98,6 +101,10 @@ def p_field_decl(p):
     "field_decl : type_spec ID"
 
 
+# ---------------------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------------------
+
 def p_param_list_opt_empty(p):
     "param_list_opt : empty"
 
@@ -118,6 +125,10 @@ def p_param_decl(p):
     "param_decl : type_spec ID"
 
 
+# ---------------------------------------------------------------------------
+# Block
+# ---------------------------------------------------------------------------
+
 def p_block(p):
     "block : LBRACE block_items_opt RBRACE"
 
@@ -134,13 +145,19 @@ def p_block_item_empty(p):
     "block_item : SEMICOLON"
 
 
+# Exactly one mandatory semicolon per statement; additional semicolons are
+# handled as standalone block_item : SEMICOLON entries.
 def p_block_item_simple(p):
-    "block_item : simple_statement semicolons"
+    "block_item : simple_statement SEMICOLON"
 
 
 def p_block_item_control(p):
     "block_item : control_statement"
 
+
+# ---------------------------------------------------------------------------
+# Statements inside blocks
+# ---------------------------------------------------------------------------
 
 def p_simple_statement_typed(p):
     "simple_statement : type_spec ID typed_simple_statement_tail"
@@ -150,8 +167,13 @@ def p_typed_simple_statement_tail_init(p):
     "typed_simple_statement_tail : ASSIGN expression"
 
 
+# Multi-declaration (or empty → single bare declaration).
 def p_typed_simple_statement_tail_decl(p):
     "typed_simple_statement_tail : id_list_tail"
+
+
+def p_simple_statement_plain(p):
+    "simple_statement : plain_simple_statement"
 
 
 def p_plain_simple_statement_assignment(p):
@@ -178,9 +200,9 @@ def p_plain_simple_statement_expr(p):
     "plain_simple_statement : expression"
 
 
-def p_simple_statement_plain(p):
-    "simple_statement : plain_simple_statement"
-
+# ---------------------------------------------------------------------------
+# Control flow
+# ---------------------------------------------------------------------------
 
 def p_control_statement_if(p):
     "control_statement : IF LPAREN expression RPAREN block"
@@ -198,6 +220,10 @@ def p_control_statement_do_while(p):
     "control_statement : DO block WHILE LPAREN expression RPAREN"
 
 
+# ---------------------------------------------------------------------------
+# Multi-declaration tail: zero or more comma-separated identifiers.
+# ---------------------------------------------------------------------------
+
 def p_id_list_tail_empty(p):
     "id_list_tail : empty"
 
@@ -214,17 +240,20 @@ def p_comma_id_list_many(p):
     "comma_id_list : comma_id_list COMMA ID"
 
 
+# ---------------------------------------------------------------------------
+# Assignment
+# ---------------------------------------------------------------------------
+
+# Using postfix_expr on the left-hand side avoids the lvalue/primary_expr
+# reduce/reduce conflict. Semantic validation (lvalue must be an actual
+# writable location) is deferred to P3.
 def p_assignment(p):
-    "assignment : lvalue ASSIGN expression"
+    "assignment : postfix_expr ASSIGN expression"
 
 
-def p_lvalue_id(p):
-    "lvalue : ID"
-
-
-def p_lvalue_dot(p):
-    "lvalue : lvalue DOT ID"
-
+# ---------------------------------------------------------------------------
+# Type specifier
+# ---------------------------------------------------------------------------
 
 def p_type_spec_primitive(p):
     """type_spec : INT
@@ -237,12 +266,12 @@ def p_type_spec_record(p):
     "type_spec : ID"
 
 
+# ---------------------------------------------------------------------------
+# Expressions
+# ---------------------------------------------------------------------------
+
 def p_expression_postfix(p):
     "expression : postfix_expr"
-
-
-def p_expression_grouped(p):
-    "expression : LPAREN expression RPAREN"
 
 
 def p_expression_unary_plus(p):
@@ -271,6 +300,10 @@ def p_expression_binary(p):
                   | expression OR expression"""
 
 
+# ---------------------------------------------------------------------------
+# Postfix expressions (calls and field access)
+# ---------------------------------------------------------------------------
+
 def p_postfix_expr_primary(p):
     "postfix_expr : primary_expr"
 
@@ -283,6 +316,10 @@ def p_postfix_expr_dot(p):
     "postfix_expr : postfix_expr DOT ID"
 
 
+# ---------------------------------------------------------------------------
+# Primary expressions
+# ---------------------------------------------------------------------------
+
 def p_primary_expr_literal(p):
     "primary_expr : literal"
 
@@ -291,6 +328,7 @@ def p_primary_expr_id(p):
     "primary_expr : ID"
 
 
+# Parenthesised sub-expressions (highest precedence).
 def p_primary_expr_grouped(p):
     "primary_expr : LPAREN expression RPAREN"
 
@@ -299,6 +337,10 @@ def p_primary_expr_new(p):
     "primary_expr : NEW ID LPAREN arg_list_opt RPAREN"
 
 
+# ---------------------------------------------------------------------------
+# Literals
+# ---------------------------------------------------------------------------
+
 def p_literal(p):
     """literal : INT_VALUE
                | FLOAT_VALUE
@@ -306,6 +348,10 @@ def p_literal(p):
                | TRUE
                | FALSE"""
 
+
+# ---------------------------------------------------------------------------
+# Argument list
+# ---------------------------------------------------------------------------
 
 def p_arg_list_opt_empty(p):
     "arg_list_opt : empty"
@@ -323,9 +369,17 @@ def p_arg_list_many(p):
     "arg_list : arg_list COMMA expression"
 
 
+# ---------------------------------------------------------------------------
+# Epsilon
+# ---------------------------------------------------------------------------
+
 def p_empty(p):
     "empty :"
 
+
+# ---------------------------------------------------------------------------
+# Error handling
+# ---------------------------------------------------------------------------
 
 def p_error(p):
     if p is None:
@@ -334,6 +388,10 @@ def p_error(p):
         _parse_errors.append(f"[ERROR] Token '{p.type}' inesperado en la línea {p.lineno}")
     raise SyntaxError
 
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 def build_parser(**kwargs):
     return yacc.yacc(
