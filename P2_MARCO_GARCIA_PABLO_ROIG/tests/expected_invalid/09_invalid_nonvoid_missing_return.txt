@@ -1,0 +1,1 @@
+[ERROR] La función 'f' debe contener al menos un return con expresión en la línea 1

@@ -1,0 +1,1 @@
+[ERROR] 'break' fuera de bucle en la línea 2

@@ -1,0 +1,7 @@
+int a, b;
+float x = 2.5;
+char c = 'Z';
+boolean ok = true;
+a = 1;
+b = a + 2 * 3;
+print(b);
