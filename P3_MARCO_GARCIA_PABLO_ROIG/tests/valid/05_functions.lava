@@ -1,0 +1,15 @@
+float calcularPromedio(float a, float b) {
+    float suma = a + b;
+    return suma / 2;
+}
+
+float resultado = calcularPromedio(10.5, 5.5);
+
+void saludar() {
+}
+
+int doble(int x) {
+    return x * 2;
+}
+
+int r = doble(5);
