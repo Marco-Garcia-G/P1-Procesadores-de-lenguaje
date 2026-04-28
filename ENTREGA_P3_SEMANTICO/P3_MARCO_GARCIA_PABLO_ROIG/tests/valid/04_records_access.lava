@@ -1,0 +1,3 @@
+record Vector(float x, float y);
+Vector v = new Vector(1, 2);
+float len = v.x * v.x + v.y * v.y;

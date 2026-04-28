@@ -1,0 +1,10 @@
+int choose(int value) {
+  return value;
+}
+
+float choose(float value) {
+  return value;
+}
+
+float result = choose(1) + choose(2.5);
+boolean ok = result >= 3.5;

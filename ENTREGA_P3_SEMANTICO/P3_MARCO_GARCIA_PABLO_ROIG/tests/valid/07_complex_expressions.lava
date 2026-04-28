@@ -1,0 +1,8 @@
+int a = 10;
+int b = 20;
+boolean c = a > 5 && b < 30;
+boolean d = !c || a == b;
+float e = 3.14 * 2;
+int f = -a;
+float g = +3.5;
+boolean h = 5 == 5.0;

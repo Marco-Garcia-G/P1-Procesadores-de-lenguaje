@@ -1,0 +1,7 @@
+int f(int value) {
+  return value;
+}
+
+float f(int value) {
+  return value;
+}

@@ -1,0 +1,6 @@
+record Point(int x, int y);
+Point make(int a, int b) {
+  return new Point(a, b);
+}
+Point p = make(1, 2);
+print(p.x);

@@ -1,0 +1,5 @@
+int a = 28;
+float b = 24.9;
+char c = 'x';
+boolean d = true;
+int e, f;

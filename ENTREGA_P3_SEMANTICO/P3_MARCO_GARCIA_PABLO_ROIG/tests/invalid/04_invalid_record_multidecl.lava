@@ -1,0 +1,2 @@
+record Circle(float r);
+Circle a, b;

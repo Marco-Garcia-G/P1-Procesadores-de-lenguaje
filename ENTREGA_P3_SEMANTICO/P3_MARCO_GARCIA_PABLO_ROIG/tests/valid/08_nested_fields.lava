@@ -1,0 +1,9 @@
+record Vector(float x, float y);
+record Planet(Vector position, Vector velocity, boolean active);
+Planet earth = new Planet(new Vector(0, 0), new Vector(1, 2), true);
+earth.position.x = earth.position.x + earth.velocity.x;
+if (!earth.active) {
+  print('N');
+} else {
+  print('Y');
+}

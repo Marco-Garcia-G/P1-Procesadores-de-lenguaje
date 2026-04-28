@@ -1,0 +1,24 @@
+int step = 0;
+while (step < 3) {
+    step = step + 1;
+    if (step == 2) {
+        break;
+    }
+}
+
+boolean flag = true;
+if (flag) {
+    print('Y');
+} else {
+    print('N');
+}
+
+int i = 0;
+int v = 0;
+do {
+    if (v >= 10) {
+        break;
+    }
+    v = (v + 1) * 2;
+    i = i + 1;
+} while (i < 4)
