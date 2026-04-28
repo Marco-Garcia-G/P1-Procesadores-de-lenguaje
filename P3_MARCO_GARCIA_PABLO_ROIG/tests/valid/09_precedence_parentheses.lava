@@ -1,0 +1,2 @@
+int value = (1 + 2) * 3;
+boolean ok = !false && true || 3 < 4;

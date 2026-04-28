@@ -20,4 +20,4 @@ Bateria de pruebas:
 - Ejecutar desde tests/:
   python3 run_tests.py
 - Resultado esperado:
-  Summary: 22/22 passed
+  Summary: 25/25 passed

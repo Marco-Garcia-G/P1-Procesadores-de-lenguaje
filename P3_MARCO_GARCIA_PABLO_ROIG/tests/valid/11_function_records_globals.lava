@@ -1,0 +1,13 @@
+record Point(int x, int y);
+record Line(Point a, Point b);
+
+int offset = 2;
+
+Line buildLine(int x1, int y1, int x2, int y2) {
+  Point a = new Point(x1 + offset, y1);
+  Point b = new Point(x2, y2);
+  return new Line(a, b);
+}
+
+Line line = buildLine(0, 1, 2, 3);
+int firstX = line.a.x;

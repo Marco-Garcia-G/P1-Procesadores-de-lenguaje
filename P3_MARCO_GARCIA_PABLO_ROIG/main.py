@@ -2,18 +2,24 @@ import os
 import sys
 
 from lexer import build_lexer
-from parser import parse_text
+from parser import parse_program, parse_text
+from semantic import analyze_program
 
 
 def main():
     if len(sys.argv) == 2:
-        token_mode = False
+        mode = "semantic"
         input_path = sys.argv[1]
     elif len(sys.argv) == 3 and sys.argv[1] == "--token":
-        token_mode = True
+        mode = "token"
+        input_path = sys.argv[2]
+    elif len(sys.argv) == 3 and sys.argv[1] == "--ir":
+        mode = "ir"
         input_path = sys.argv[2]
     else:
-        print("Uso: python main.py <file.lava> | python main.py --token <file.lava>")
+        print(
+            "Uso: python main.py <file.lava> | python main.py --token <file.lava> | python main.py --ir <file.lava>"
+        )
         return 1
 
     if not os.path.exists(input_path):
@@ -23,7 +29,7 @@ def main():
     with open(input_path, "r", encoding="utf-8") as handle:
         data = handle.read()
 
-    if token_mode:
+    if mode == "token":
         lexer = build_lexer()
         lexer.input(data)
 
@@ -42,6 +48,23 @@ def main():
                 out.write(
                     f"{tok.type}, {lexeme}, {tok.lineno}, {col_start}, {col_end}\n"
                 )
+        return 0
+
+    if mode == "ir":
+        program, errors = parse_program(data)
+        if not errors:
+            errors = analyze_program(program)
+        if errors:
+            for error in errors:
+                print(error)
+            return 1
+
+        from ir import generate_ir
+
+        base, _ext = os.path.splitext(input_path)
+        out_path = base + ".ir"
+        with open(out_path, "w", encoding="utf-8") as out:
+            out.write(generate_ir(program))
         return 0
 
     errors = parse_text(data)

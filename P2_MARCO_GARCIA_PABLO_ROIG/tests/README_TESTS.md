@@ -15,7 +15,7 @@ python3 run_tests.py
 
 Exito:
 - Todos los casos deben mostrar `OK`
-- Resumen final: `Summary: 22/22 passed`
+- Resumen final: `Summary: 25/25 passed`
 
 Cobertura:
 - Ficheros con solo saltos de linea y con solo `;`
@@ -23,4 +23,5 @@ Cobertura:
 - Registros, `new`, acceso por punto y campos anidados
 - `if/else`, `while`, `do while` y `break`
 - Funciones, parametros, retorno y llamadas
+- Rechazo de llamadas sobre literales, constructores y campos
 - Restricciones de P2 sobre asignacion, `break`, `return` y registros

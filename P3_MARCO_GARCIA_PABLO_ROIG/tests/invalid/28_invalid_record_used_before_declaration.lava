@@ -1,0 +1,2 @@
+Point p = new Point(1);
+record Point(int x);

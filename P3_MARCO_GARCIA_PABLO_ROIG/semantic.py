@@ -1,17 +1,20 @@
-class SymbolTable:
+PRIMITIVE_TYPES = {"int", "float", "char", "boolean"}
+NUMERIC_TYPES = {"int", "float"}
+
+
+class Scope:
     def __init__(self, parent=None):
         self.parent = parent
         self.symbols = {}
 
-    def declare(self, name, type_name, line, initialized=False):
+    def declare(self, name, type_name, line, errors):
         if name in self.symbols:
-            return False, f"[ERROR SEMANTICO] Variable '{name}' ya declarada en este ámbito (línea {line})"
-        self.symbols[name] = {
-            "type": type_name,
-            "initialized": initialized,
-            "line": line,
-        }
-        return True, None
+            errors.append(
+                f"[ERROR] Simbolo '{name}' ya declarado en este ambito en la linea {line}"
+            )
+            return False
+        self.symbols[name] = {"type": type_name, "line": line}
+        return True
 
     def lookup(self, name):
         if name in self.symbols:
@@ -20,542 +23,538 @@ class SymbolTable:
             return self.parent.lookup(name)
         return None
 
-    def assign(self, name):
-        if name in self.symbols:
-            self.symbols[name]["initialized"] = True
-            return True
-        if self.parent is not None:
-            return self.parent.assign(name)
-        return False
-
-    def child(self):
-        return SymbolTable(parent=self)
-
-
-class RecordTable:
-    def __init__(self):
-        self.records = {}
-
-    def declare(self, name, fields, line):
-        if name in self.records:
-            return False, f"[ERROR SEMANTICO] Registro '{name}' ya declarado (línea {line})"
-        self.records[name] = {"fields": fields, "line": line}
-        return True, None
-
-    def lookup(self, name):
-        return self.records.get(name, None)
-
-
-class FunctionTable:
-    def __init__(self):
-        self.functions = {}
-
-    def declare(self, name, return_type, params, line):
-        sig = (name, tuple(p["type"] for p in params))
-        if sig in self.functions:
-            return False, f"[ERROR SEMANTICO] Función '{name}' ya declarada con la misma firma (línea {line})"
-        if name not in self.functions:
-            self.functions[name] = []
-        entry = {"return_type": return_type, "params": params, "line": line}
-        self.functions[name].append(entry)
-        return True, None
-
-    def lookup(self, name, arg_types):
-        overloads = self.functions.get(name)
-        if overloads is None:
-            return None
-        for entry in overloads:
-            param_types = [p["type"] for p in entry["params"]]
-            if len(param_types) != len(arg_types):
-                continue
-            if all(types_compatible(a, p) for a, p in zip(arg_types, param_types)):
-                return entry
-        return None
-
-    def lookup_by_name(self, name):
-        return self.functions.get(name)
-
-
-NUMERIC_TYPES = {"int", "float"}
-PRIMITIVE_TYPES = {"int", "float", "char", "boolean"}
-
-
-def is_numeric(t):
-    return t in NUMERIC_TYPES
-
-
-def is_primitive(t):
-    return t in PRIMITIVE_TYPES
-
-
-def types_compatible(source, target):
-    if source == target:
-        return True
-    if source == "int" and target == "float":
-        return True
-    return False
-
-
-def result_type_arithmetic(left, right):
-    if left == "float" or right == "float":
-        return "float"
-    if left == "int" and right == "int":
-        return "int"
-    return None
-
 
 class SemanticAnalyzer:
     def __init__(self):
         self.errors = []
-        self.record_table = RecordTable()
-        self.function_table = FunctionTable()
-        self.global_scope = SymbolTable()
-        self.in_loop = False
-        self.current_function_type = None
-
-    def error(self, msg):
-        self.errors.append(msg)
+        self.records = {}
+        self.functions = {}
+        self.global_names = {}
+        self.global_scope = Scope()
 
     def analyze(self, program):
-        self._register_declarations(program)
-        self._analyze_items(program, self.global_scope)
+        self.collect_records_and_functions(program)
+        self.analyze_top_level(program)
+        self.analyze_functions(program)
         return self.errors
 
-    def _register_declarations(self, items):
-        for item in items:
+    def collect_records_and_functions(self, program):
+        for item in program:
             if item is None:
                 continue
             if item["kind"] == "record_decl":
-                self._register_record(item)
+                self.collect_record(item)
             elif item["kind"] == "function":
-                self._register_function(item)
+                self.collect_function(item)
 
-    def _register_record(self, item):
-        fields = item["fields"]
-        for f in fields:
-            ft = f["type"]
-            if not is_primitive(ft) and self.record_table.lookup(ft) is None:
+    def collect_record(self, item):
+        name = item["name"]
+        if name in self.records:
+            self.error(item["line"], f"Registro '{name}' ya declarado")
+            return
+        if not self.reserve_global_name(name, "registro", item["line"]):
+            return
+
+        fields = []
+        field_names = set()
+        valid = True
+        for field in item["fields"]:
+            field_name = field["name"]
+            field_type = field["type"]
+            if field_name in field_names:
                 self.error(
-                    f"[ERROR SEMANTICO] Tipo '{ft}' no definido para campo '{f['name']}' del registro '{item['name']}' (línea {f['line']})"
+                    field["line"],
+                    f"Campo '{field_name}' repetido en el registro '{name}'",
                 )
-        ok, err = self.record_table.declare(item["name"], fields, item["line"])
-        if not ok:
-            self.error(err)
+                valid = False
+            field_names.add(field_name)
 
-    def _register_function(self, item):
-        rt = item["return_type"]
-        if rt != "void" and not is_primitive(rt) and self.record_table.lookup(rt) is None:
+            if not self.type_exists(field_type):
+                self.error(
+                    field["line"],
+                    f"Tipo '{field_type}' no declarado en el campo '{field_name}'",
+                )
+                valid = False
+            fields.append(field)
+
+        if valid:
+            self.records[name] = {
+                "line": item["line"],
+                "fields": fields,
+                "field_map": {field["name"]: field for field in fields},
+            }
+
+    def collect_function(self, item):
+        return_type = item["return_type"]
+        name = item["name"]
+        owner = self.global_names.get(name)
+        if owner is not None and owner != "funcion":
             self.error(
-                f"[ERROR SEMANTICO] Tipo de retorno '{rt}' no definido para función '{item['name']}' (línea {item['line']})"
+                item["line"],
+                f"Funcion '{name}' entra en conflicto con {owner} global del mismo nombre",
             )
-        for p in item["params"]:
-            pt = p["type"]
-            if not is_primitive(pt) and self.record_table.lookup(pt) is None:
+            return
+        self.global_names[name] = "funcion"
+
+        if not self.type_exists(return_type, allow_void=True):
+            self.error(
+                item["line"],
+                f"Tipo de retorno '{return_type}' no declarado en la funcion '{name}'",
+            )
+            return
+
+        valid = True
+        for param in item["params"]:
+            if not self.type_exists(param["type"]):
                 self.error(
-                    f"[ERROR SEMANTICO] Tipo '{pt}' no definido para parámetro '{p['name']}' de función '{item['name']}' (línea {p['line']})"
+                    param["line"],
+                    f"Tipo '{param['type']}' no declarado en el parametro '{param['name']}'",
                 )
-        ok, err = self.function_table.declare(
-            item["name"], item["return_type"], item["params"], item["line"]
-        )
-        if not ok:
-            self.error(err)
+                valid = False
 
-    def _analyze_items(self, items, scope):
-        for item in items:
-            if item is None:
+        param_types = tuple(param["type"] for param in item["params"])
+        overloads = self.functions.setdefault(name, [])
+        if any(signature["param_types"] == param_types for signature in overloads):
+            signature_text = self.format_signature(name, param_types)
+            self.error(item["line"], f"Funcion duplicada '{signature_text}'")
+            valid = False
+
+        if valid:
+            overloads.append(
+                {
+                    "name": name,
+                    "return_type": return_type,
+                    "params": item["params"],
+                    "param_types": param_types,
+                    "line": item["line"],
+                    "node": item,
+                }
+            )
+
+    def analyze_top_level(self, program):
+        for item in program:
+            if item is None or item["kind"] in {"record_decl", "function"}:
                 continue
-            self._analyze_item(item, scope)
+            self.analyze_item(item, self.global_scope, None, False, None)
 
-    def _analyze_item(self, item, scope):
+    def analyze_functions(self, program):
+        for item in program:
+            if item is not None and item["kind"] == "function":
+                self.analyze_function(item)
+
+    def analyze_function(self, item):
+        scope = Scope(self.global_scope)
+        param_names = set()
+        for param in item["params"]:
+            if param["name"] in param_names:
+                self.error(
+                    param["line"],
+                    f"Parametro '{param['name']}' repetido en la funcion '{item['name']}'",
+                )
+                continue
+            param_names.add(param["name"])
+            scope.declare(param["name"], param["type"], param["line"], self.errors)
+
+        state = {"has_value_return": False}
+        self.analyze_block(item["body"], scope, item["return_type"], False, state, False)
+
+        if item["return_type"] != "void" and not state["has_value_return"]:
+            self.error(
+                item["line"],
+                f"La funcion '{item['name']}' debe contener al menos un return con expresion",
+            )
+
+    def analyze_block(
+        self, items, parent_scope, function_type, in_loop, state, create_scope=True
+    ):
+        scope = Scope(parent_scope) if create_scope else parent_scope
+        for item in items:
+            self.analyze_item(item, scope, function_type, in_loop, state)
+
+    def analyze_item(self, item, scope, function_type, in_loop, state):
+        if item is None:
+            return
+
         kind = item["kind"]
 
-        if kind == "record_decl":
-            return
-
-        if kind == "function":
-            self._analyze_function(item, scope)
-            return
-
         if kind == "decl":
-            self._analyze_decl(item, scope)
-            return
+            self.analyze_declaration(item, scope)
+        elif kind == "assign":
+            self.analyze_assignment(item, scope)
+        elif kind == "break":
+            if not in_loop:
+                self.error(item["line"], "'break' fuera de bucle")
+        elif kind == "return":
+            self.analyze_return(item, scope, function_type, state)
+        elif kind == "print":
+            self.analyze_print(item, scope)
+        elif kind == "expr":
+            self.analyze_expression(item["value"], scope)
+        elif kind == "if":
+            cond_type = self.analyze_expression(item["cond"], scope)
+            self.require_boolean(cond_type, item["line"], "condicion de if")
+            self.analyze_block(item["then_block"], scope, function_type, in_loop, state)
+            if item["else_block"] is not None:
+                self.analyze_block(
+                    item["else_block"], scope, function_type, in_loop, state
+                )
+        elif kind == "while":
+            cond_type = self.analyze_expression(item["cond"], scope)
+            self.require_boolean(cond_type, item["line"], "condicion de while")
+            self.analyze_block(item["body"], scope, function_type, True, state)
+        elif kind == "do_while":
+            self.analyze_block(item["body"], scope, function_type, True, state)
+            cond_type = self.analyze_expression(item["cond"], scope)
+            self.require_boolean(cond_type, item["line"], "condicion de do-while")
 
-        if kind == "assign":
-            self._analyze_assign(item, scope)
-            return
-
-        if kind == "return":
-            self._analyze_return(item, scope)
-            return
-
-        if kind == "break":
-            if not self.in_loop:
-                self.error(f"[ERROR SEMANTICO] 'break' fuera de bucle (línea {item['line']})")
-            return
-
-        if kind == "print":
-            self._analyze_expr(item["value"], scope)
-            return
-
-        if kind == "expr":
-            self._analyze_expr(item["value"], scope)
-            return
-
-        if kind == "if":
-            self._analyze_if(item, scope)
-            return
-
-        if kind == "while":
-            self._analyze_while(item, scope)
-            return
-
-        if kind == "do_while":
-            self._analyze_do_while(item, scope)
-            return
-
-    def _analyze_function(self, item, scope):
-        fn_scope = scope.child()
-        for p in item["params"]:
-            fn_scope.declare(p["name"], p["type"], p["line"], initialized=True)
-
-        old_fn_type = self.current_function_type
-        self.current_function_type = item["return_type"]
-
-        has_return = self._analyze_block(item["body"], fn_scope)
-
-        if item["return_type"] != "void" and not has_return:
-            self.error(
-                f"[ERROR SEMANTICO] Función '{item['name']}' de tipo '{item['return_type']}' debe contener un return con expresión (línea {item['line']})"
-            )
-
-        self.current_function_type = old_fn_type
-
-    def _analyze_block(self, items, scope):
-        block_scope = scope.child()
-        has_return = False
-        for item in items:
-            if item is None:
-                continue
-            self._analyze_item(item, block_scope)
-            if item["kind"] == "return" and item.get("value") is not None:
-                has_return = True
-        return has_return
-
-    def _analyze_decl(self, item, scope):
+    def analyze_declaration(self, item, scope):
         type_name = item["type_name"]
+        type_ok = self.type_exists(type_name, line=item["line"])
+        if not type_ok:
+            self.error(item["line"], f"Tipo '{type_name}' no declarado")
 
-        if not is_primitive(type_name) and self.record_table.lookup(type_name) is None:
-            self.error(
-                f"[ERROR SEMANTICO] Tipo '{type_name}' no definido (línea {item['line']})"
-            )
-            return
-
-        has_init = item["init"] is not None
-        init_type = None
-        if has_init:
-            init_type = self._analyze_expr(item["init"], scope)
+        if item["init"] is not None:
+            value_type = self.analyze_expression(item["init"], scope)
+            if type_ok and not self.can_assign(type_name, value_type):
+                self.error(
+                    item["line"],
+                    f"No se puede inicializar '{item['names'][0]}' de tipo {type_name} con {self.type_label(value_type)}",
+                )
 
         for name in item["names"]:
-            ok, err = scope.declare(name, type_name, item["line"], initialized=has_init)
-            if not ok:
-                self.error(err)
+            if scope is self.global_scope and not self.reserve_global_name(
+                name, "variable", item["line"]
+            ):
                 continue
+            scope.declare(name, type_name, item["line"], self.errors)
 
-            if has_init and init_type is not None:
-                if not types_compatible(init_type, type_name):
-                    self.error(
-                        f"[ERROR SEMANTICO] No se puede asignar tipo '{init_type}' a variable '{name}' de tipo '{type_name}' (línea {item['line']})"
-                    )
+    def analyze_assignment(self, item, scope):
+        target_type = self.analyze_lvalue(item["target"], scope)
+        value_type = self.analyze_expression(item["value"], scope)
+        if not self.can_assign(target_type, value_type):
+            self.error(
+                item["line"],
+                f"No se puede asignar {self.type_label(value_type)} a {self.type_label(target_type)}",
+            )
 
-    def _analyze_assign(self, item, scope):
-        target_type = self._analyze_lvalue(item["target"], scope)
-        value_type = self._analyze_expr(item["value"], scope)
-
-        if target_type is not None and value_type is not None:
-            if not types_compatible(value_type, target_type):
-                self.error(
-                    f"[ERROR SEMANTICO] No se puede asignar tipo '{value_type}' a tipo '{target_type}' (línea {item['line']})"
-                )
-
-        if item["target"]["kind"] == "id":
-            scope.assign(item["target"]["name"])
-
-    def _analyze_return(self, item, scope):
-        if self.current_function_type is None:
-            self.error(f"[ERROR SEMANTICO] 'return' fuera de función (línea {item['line']})")
+    def analyze_return(self, item, scope, function_type, state):
+        if function_type is None:
+            self.error(item["line"], "'return' fuera de funcion")
             return
 
-        if self.current_function_type == "void":
-            if item["value"] is not None:
-                self.error(
-                    f"[ERROR SEMANTICO] 'return' con valor en función void (línea {item['line']})"
-                )
+        if function_type == "void":
+            self.error(
+                item["line"],
+                "'return' no permitido en funcion void",
+            )
             return
 
         if item["value"] is None:
             self.error(
-                f"[ERROR SEMANTICO] 'return' sin valor en función de tipo '{self.current_function_type}' (línea {item['line']})"
+                item["line"],
+                "'return' sin expresion en funcion no void",
             )
             return
 
-        ret_type = self._analyze_expr(item["value"], scope)
-        if ret_type is not None and not types_compatible(ret_type, self.current_function_type):
+        value_type = self.analyze_expression(item["value"], scope)
+        if self.can_assign(function_type, value_type):
+            state["has_value_return"] = True
+        else:
             self.error(
-                f"[ERROR SEMANTICO] Tipo de retorno '{ret_type}' incompatible con tipo de función '{self.current_function_type}' (línea {item['line']})"
+                item["line"],
+                f"El return de tipo {self.type_label(value_type)} no coincide con {function_type}",
             )
 
-    def _analyze_if(self, item, scope):
-        cond_type = self._analyze_expr(item["cond"], scope)
-        if cond_type is not None and cond_type != "boolean":
+    def analyze_print(self, item, scope):
+        value_type = self.analyze_expression(item["value"], scope)
+        if value_type == "void":
+            self.error(item["line"], "No se puede imprimir una expresion void")
+        elif value_type is not None and value_type not in PRIMITIVE_TYPES:
             self.error(
-                f"[ERROR SEMANTICO] La condición del 'if' debe ser boolean, se encontró '{cond_type}' (línea {item['line']})"
-            )
-        self._analyze_block(item["then_block"], scope)
-        if item["else_block"] is not None:
-            self._analyze_block(item["else_block"], scope)
-
-    def _analyze_while(self, item, scope):
-        cond_type = self._analyze_expr(item["cond"], scope)
-        if cond_type is not None and cond_type != "boolean":
-            self.error(
-                f"[ERROR SEMANTICO] La condición del 'while' debe ser boolean, se encontró '{cond_type}' (línea {item['line']})"
-            )
-        old_in_loop = self.in_loop
-        self.in_loop = True
-        self._analyze_block(item["body"], scope)
-        self.in_loop = old_in_loop
-
-    def _analyze_do_while(self, item, scope):
-        old_in_loop = self.in_loop
-        self.in_loop = True
-        self._analyze_block(item["body"], scope)
-        self.in_loop = old_in_loop
-        cond_type = self._analyze_expr(item["cond"], scope)
-        if cond_type is not None and cond_type != "boolean":
-            self.error(
-                f"[ERROR SEMANTICO] La condición del 'do-while' debe ser boolean, se encontró '{cond_type}' (línea {item['line']})"
+                item["line"],
+                f"No se puede imprimir directamente un registro de tipo {value_type}",
             )
 
-    def _analyze_lvalue(self, expr, scope):
+    def analyze_lvalue(self, expr, scope):
         if expr["kind"] == "id":
-            sym = scope.lookup(expr["name"])
-            if sym is None:
-                self.error(
-                    f"[ERROR SEMANTICO] Variable '{expr['name']}' no declarada (línea {expr['line']})"
-                )
-                return None
-            return sym["type"]
+            return self.lookup_variable(expr["name"], expr["line"], scope)
 
         if expr["kind"] == "field":
-            obj_type = self._analyze_lvalue(expr["value"], scope)
-            if obj_type is None:
+            base = expr["value"]
+            if base["kind"] not in {"id", "field"}:
+                self.error(expr["line"], "Lado izquierdo de asignacion invalido")
                 return None
-            rec = self.record_table.lookup(obj_type)
-            if rec is None:
-                self.error(
-                    f"[ERROR SEMANTICO] Tipo '{obj_type}' no es un registro (línea {expr['line']})"
-                )
-                return None
-            for f in rec["fields"]:
-                if f["name"] == expr["name"]:
-                    return f["type"]
-            self.error(
-                f"[ERROR SEMANTICO] El registro '{obj_type}' no tiene campo '{expr['name']}' (línea {expr['line']})"
-            )
-            return None
+            base_type = self.analyze_lvalue(base, scope)
+            return self.resolve_field_type(base_type, expr["name"], expr["line"])
 
-        self.error(
-            f"[ERROR SEMANTICO] Lado izquierdo de asignación inválido (línea {expr['line']})"
-        )
+        self.error(expr["line"], "Lado izquierdo de asignacion invalido")
         return None
 
-    def _analyze_expr(self, expr, scope):
-        if expr is None:
-            return None
-
+    def analyze_expression(self, expr, scope):
         kind = expr["kind"]
 
         if kind == "literal":
             return expr["literal_type"]
 
         if kind == "id":
-            sym = scope.lookup(expr["name"])
-            if sym is None:
-                self.error(
-                    f"[ERROR SEMANTICO] Variable '{expr['name']}' no declarada (línea {expr['line']})"
-                )
-                return None
-            return sym["type"]
-
-        if kind == "unary":
-            operand_type = self._analyze_expr(expr["value"], scope)
-            if operand_type is None:
-                return None
-            op = expr["op"]
-            if op in ("+", "-"):
-                if not is_numeric(operand_type):
-                    self.error(
-                        f"[ERROR SEMANTICO] Operador '{op}' no aplicable a tipo '{operand_type}' (línea {expr['line']})"
-                    )
-                    return None
-                return operand_type
-            if op == "!":
-                if operand_type != "boolean":
-                    self.error(
-                        f"[ERROR SEMANTICO] Operador '!' requiere tipo boolean, se encontró '{operand_type}' (línea {expr['line']})"
-                    )
-                    return None
-                return "boolean"
-
-        if kind == "binary":
-            left_type = self._analyze_expr(expr["left"], scope)
-            right_type = self._analyze_expr(expr["right"], scope)
-            if left_type is None or right_type is None:
-                return None
-            op = expr["op"]
-            return self._check_binary_op(op, left_type, right_type, expr["line"])
-
-        if kind == "call":
-            return self._analyze_call(expr, scope)
-
-        if kind == "field":
-            return self._analyze_field_access(expr, scope)
+            return self.lookup_variable(expr["name"], expr["line"], scope)
 
         if kind == "new":
-            return self._analyze_new(expr, scope)
+            return self.analyze_new(expr, scope)
+
+        if kind == "field":
+            base_type = self.analyze_expression(expr["value"], scope)
+            return self.resolve_field_type(base_type, expr["name"], expr["line"])
+
+        if kind == "call":
+            return self.analyze_call(expr, scope)
+
+        if kind == "unary":
+            return self.analyze_unary(expr, scope)
+
+        if kind == "binary":
+            return self.analyze_binary(expr, scope)
+
+        if kind == "assign":
+            self.error(expr["line"], "La asignacion no puede usarse como expresion")
+            return None
 
         return None
 
-    def _check_binary_op(self, op, left, right, line):
-        if op in ("+", "-", "*", "/"):
-            if not is_numeric(left):
-                self.error(
-                    f"[ERROR SEMANTICO] Operador '{op}' no aplicable a tipo '{left}' (línea {line})"
-                )
-                return None
-            if not is_numeric(right):
-                self.error(
-                    f"[ERROR SEMANTICO] Operador '{op}' no aplicable a tipo '{right}' (línea {line})"
-                )
-                return None
-            return result_type_arithmetic(left, right)
-
-        if op in ("&&", "||"):
-            if left != "boolean":
-                self.error(
-                    f"[ERROR SEMANTICO] Operador '{op}' requiere boolean, se encontró '{left}' (línea {line})"
-                )
-                return None
-            if right != "boolean":
-                self.error(
-                    f"[ERROR SEMANTICO] Operador '{op}' requiere boolean, se encontró '{right}' (línea {line})"
-                )
-                return None
-            return "boolean"
-
-        if op in (">", ">=", "<", "<=", "=="):
-            if op == "==":
-                if left == right:
-                    return "boolean"
-                if is_numeric(left) and is_numeric(right):
-                    return "boolean"
-                self.error(
-                    f"[ERROR SEMANTICO] No se pueden comparar tipos '{left}' y '{right}' con '{op}' (línea {line})"
-                )
-                return None
-            if not is_numeric(left):
-                self.error(
-                    f"[ERROR SEMANTICO] Operador '{op}' no aplicable a tipo '{left}' (línea {line})"
-                )
-                return None
-            if not is_numeric(right):
-                self.error(
-                    f"[ERROR SEMANTICO] Operador '{op}' no aplicable a tipo '{right}' (línea {line})"
-                )
-                return None
-            return "boolean"
-
-        return None
-
-    def _analyze_call(self, expr, scope):
-        func_expr = expr["func"]
-
-        if func_expr["kind"] != "id":
-            self.error(
-                f"[ERROR SEMANTICO] Solo se permiten llamadas a funciones por nombre (línea {expr['line']})"
-            )
-            return None
-
-        func_name = func_expr["name"]
-        arg_types = []
-        for arg in expr["args"]:
-            t = self._analyze_expr(arg, scope)
-            arg_types.append(t)
-
-        if any(t is None for t in arg_types):
-            return None
-
-        entry = self.function_table.lookup(func_name, arg_types)
-        if entry is None:
-            overloads = self.function_table.lookup_by_name(func_name)
-            if overloads is None:
-                self.error(
-                    f"[ERROR SEMANTICO] Función '{func_name}' no declarada (línea {expr['line']})"
-                )
-            else:
-                arg_str = ", ".join(arg_types)
-                self.error(
-                    f"[ERROR SEMANTICO] No existe sobrecarga de '{func_name}' compatible con argumentos ({arg_str}) (línea {expr['line']})"
-                )
-            return None
-
-        return entry["return_type"]
-
-    def _analyze_field_access(self, expr, scope):
-        obj_type = self._analyze_expr(expr["value"], scope)
-        if obj_type is None:
-            return None
-
-        rec = self.record_table.lookup(obj_type)
-        if rec is None:
-            self.error(
-                f"[ERROR SEMANTICO] Tipo '{obj_type}' no es un registro, no se puede acceder a '{expr['name']}' (línea {expr['line']})"
-            )
-            return None
-
-        for f in rec["fields"]:
-            if f["name"] == expr["name"]:
-                return f["type"]
-
-        self.error(
-            f"[ERROR SEMANTICO] El registro '{obj_type}' no tiene campo '{expr['name']}' (línea {expr['line']})"
-        )
-        return None
-
-    def _analyze_new(self, expr, scope):
+    def analyze_new(self, expr, scope):
         type_name = expr["type_name"]
-        rec = self.record_table.lookup(type_name)
-        if rec is None:
+        record = self.records.get(type_name)
+        arg_types = [self.analyze_expression(arg, scope) for arg in expr["args"]]
+
+        if record is None:
+            self.error(expr["line"], f"Registro '{type_name}' no declarado")
+            return None
+        if record["line"] > expr["line"]:
             self.error(
-                f"[ERROR SEMANTICO] Registro '{type_name}' no definido (línea {expr['line']})"
+                expr["line"],
+                f"Registro '{type_name}' usado antes de su declaracion",
             )
             return None
 
-        fields = rec["fields"]
-        args = expr["args"]
-        if len(args) != len(fields):
+        fields = record["fields"]
+        if len(arg_types) != len(fields):
             self.error(
-                f"[ERROR SEMANTICO] '{type_name}' espera {len(fields)} argumentos, se proporcionaron {len(args)} (línea {expr['line']})"
+                expr["line"],
+                f"Constructor de '{type_name}' espera {len(fields)} argumentos y recibe {len(arg_types)}",
             )
-            return None
+            return type_name
 
-        for i, (arg, field) in enumerate(zip(args, fields)):
-            arg_type = self._analyze_expr(arg, scope)
-            if arg_type is None:
-                continue
-            if not types_compatible(arg_type, field["type"]):
+        for index, (arg_type, field) in enumerate(zip(arg_types, fields), start=1):
+            if not self.can_assign(field["type"], arg_type):
                 self.error(
-                    f"[ERROR SEMANTICO] Argumento {i+1} de '{type_name}': tipo '{arg_type}' incompatible con '{field['type']}' (línea {expr['line']})"
+                    expr["line"],
+                    f"Argumento {index} de '{type_name}' espera {field['type']} y recibe {self.type_label(arg_type)}",
                 )
-
         return type_name
+
+    def analyze_call(self, expr, scope):
+        arg_types = [self.analyze_expression(arg, scope) for arg in expr["args"]]
+        func = expr["func"]
+        if func["kind"] != "id":
+            self.error(expr["line"], "Solo se pueden llamar funciones por identificador")
+            return None
+
+        name = func["name"]
+        overloads = self.functions.get(name)
+        if not overloads:
+            self.error(expr["line"], f"Funcion '{name}' no declarada")
+            return None
+
+        arity_matches = [
+            signature
+            for signature in overloads
+            if len(signature["param_types"]) == len(arg_types)
+        ]
+        if not arity_matches:
+            self.error(
+                expr["line"],
+                f"Ninguna sobrecarga de '{name}' recibe {len(arg_types)} argumentos",
+            )
+            return None
+
+        matches = []
+        for signature in arity_matches:
+            score = self.match_score(signature["param_types"], arg_types)
+            if score is not None:
+                matches.append((score, signature))
+
+        if not matches:
+            received = ", ".join(self.type_label(type_name) for type_name in arg_types)
+            self.error(
+                expr["line"],
+                f"Ninguna sobrecarga de '{name}' acepta ({received})",
+            )
+            return None
+
+        matches.sort(key=lambda item: item[0])
+        best_score = matches[0][0]
+        best_matches = [
+            signature for score, signature in matches if score == best_score
+        ]
+        if len(best_matches) > 1:
+            self.error(expr["line"], f"Llamada ambigua a la funcion '{name}'")
+            return None
+
+        return best_matches[0]["return_type"]
+
+    def analyze_unary(self, expr, scope):
+        value_type = self.analyze_expression(expr["value"], scope)
+        op = expr["op"]
+
+        if op in {"+", "-"}:
+            if value_type in NUMERIC_TYPES:
+                return value_type
+            self.error(
+                expr["line"],
+                f"Operador unario '{op}' no aplicable a {self.type_label(value_type)}",
+            )
+            return None
+
+        if op == "!":
+            if value_type == "boolean":
+                return "boolean"
+            self.error(
+                expr["line"],
+                f"Operador '!' no aplicable a {self.type_label(value_type)}",
+            )
+            return None
+
+        return None
+
+    def analyze_binary(self, expr, scope):
+        left_type = self.analyze_expression(expr["left"], scope)
+        right_type = self.analyze_expression(expr["right"], scope)
+        op = expr["op"]
+
+        if op in {"+", "-", "*", "/"}:
+            if left_type in NUMERIC_TYPES and right_type in NUMERIC_TYPES:
+                if left_type == "float" or right_type == "float":
+                    return "float"
+                return "int"
+            self.error(
+                expr["line"],
+                f"Operador '{op}' requiere operandos numericos y recibe {self.type_label(left_type)} y {self.type_label(right_type)}",
+            )
+            return None
+
+        if op in {">", ">=", "<", "<="}:
+            if left_type in NUMERIC_TYPES and right_type in NUMERIC_TYPES:
+                return "boolean"
+            self.error(
+                expr["line"],
+                f"Operador '{op}' requiere operandos numericos y recibe {self.type_label(left_type)} y {self.type_label(right_type)}",
+            )
+            return None
+
+        if op == "==":
+            if self.are_comparable(left_type, right_type):
+                return "boolean"
+            self.error(
+                expr["line"],
+                f"Operador '==' no aplicable a {self.type_label(left_type)} y {self.type_label(right_type)}",
+            )
+            return None
+
+        if op in {"&&", "||"}:
+            if left_type == "boolean" and right_type == "boolean":
+                return "boolean"
+            self.error(
+                expr["line"],
+                f"Operador '{op}' requiere boolean y recibe {self.type_label(left_type)} y {self.type_label(right_type)}",
+            )
+            return None
+
+        return None
+
+    def resolve_field_type(self, base_type, field_name, line):
+        if base_type is None:
+            return None
+
+        record = self.records.get(base_type)
+        if record is None:
+            self.error(line, f"El tipo {base_type} no tiene campos")
+            return None
+
+        field = record["field_map"].get(field_name)
+        if field is None:
+            self.error(line, f"El registro {base_type} no tiene campo '{field_name}'")
+            return None
+
+        return field["type"]
+
+    def lookup_variable(self, name, line, scope):
+        symbol = scope.lookup(name)
+        if symbol is None:
+            self.error(line, f"Variable '{name}' no declarada")
+            return None
+        return symbol["type"]
+
+    def require_boolean(self, type_name, line, context):
+        if type_name is not None and type_name != "boolean":
+            self.error(line, f"La {context} debe ser boolean y es {type_name}")
+
+    def type_exists(self, type_name, allow_void=False, line=None):
+        if type_name in PRIMITIVE_TYPES:
+            return True
+        if allow_void and type_name == "void":
+            return True
+        record = self.records.get(type_name)
+        if record is None:
+            return False
+        return line is None or record["line"] <= line
+
+    def can_assign(self, target_type, source_type):
+        if target_type is None or source_type is None:
+            return True
+        if target_type == source_type:
+            return True
+        return target_type == "float" and source_type == "int"
+
+    def match_score(self, param_types, arg_types):
+        score = 0
+        for param_type, arg_type in zip(param_types, arg_types):
+            if not self.can_assign(param_type, arg_type):
+                return None
+            if param_type != arg_type:
+                score += 1
+        return score
+
+    def are_comparable(self, left_type, right_type):
+        if left_type is None or right_type is None:
+            return True
+        if left_type in NUMERIC_TYPES and right_type in NUMERIC_TYPES:
+            return True
+        if left_type == right_type and left_type in {"char", "boolean"}:
+            return True
+        return False
+
+    def reserve_global_name(self, name, kind, line):
+        owner = self.global_names.get(name)
+        if owner is None:
+            self.global_names[name] = kind
+            return True
+        if owner == kind == "funcion":
+            return True
+        self.error(
+            line,
+            f"Nombre global '{name}' duplicado: ya existe como {owner} y se declara como {kind}",
+        )
+        return False
+
+    def format_signature(self, name, param_types):
+        return f"{name}({', '.join(param_types)})"
+
+    def type_label(self, type_name):
+        return "tipo desconocido" if type_name is None else type_name
+
+    def error(self, line, message):
+        self.errors.append(f"[ERROR] {message} en la linea {line}")
+
+
+def analyze_program(program):
+    return SemanticAnalyzer().analyze(program)

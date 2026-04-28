@@ -3,7 +3,6 @@ import sys
 import ply.yacc as yacc
 
 from lexer import build_lexer, tokens
-from semantic import SemanticAnalyzer
 
 
 precedence = (
@@ -384,8 +383,13 @@ def p_postfix_expr_primary(p):
 
 
 def p_postfix_expr_call(p):
-    "postfix_expr : postfix_expr LPAREN arg_list_opt RPAREN"
-    p[0] = node("call", p[1]["line"], func=p[1], args=p[3])
+    "postfix_expr : ID LPAREN arg_list_opt RPAREN"
+    p[0] = node(
+        "call",
+        p.lineno(1),
+        func=node("id", p.lineno(1), name=p[1]),
+        args=p[3],
+    )
 
 
 def p_postfix_expr_dot(p):
@@ -481,7 +485,7 @@ def build_parser(**kwargs):
     )
 
 
-def parse_text(text):
+def parse_program(text):
     global _parser, _parse_errors
 
     if _parser is None:
@@ -493,12 +497,20 @@ def parse_text(text):
     try:
         program = _parser.parse(text, lexer=lexer)
     except SyntaxError:
-        return lexer.errors + _parse_errors
+        return None, lexer.errors + _parse_errors
 
-    if lexer.errors or _parse_errors:
-        return lexer.errors + _parse_errors
+    errors = lexer.errors + _parse_errors
+    if errors:
+        return None, errors
 
-    analyzer = SemanticAnalyzer()
-    semantic_errors = analyzer.analyze(program)
+    return program, []
 
-    return semantic_errors
+
+def parse_text(text):
+    program, errors = parse_program(text)
+    if errors:
+        return errors
+
+    from semantic import analyze_program
+
+    return analyze_program(program)

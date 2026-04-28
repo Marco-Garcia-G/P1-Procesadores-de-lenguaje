@@ -1,0 +1,4 @@
+record Point(int x);
+Point a = new Point(1);
+Point b = new Point(2);
+boolean same = a == b;
