@@ -52,6 +52,12 @@ tokens = [
 t_ignore = " \t\r"
 
 
+def _set_columns(t):
+    last_nl = t.lexer.lexdata.rfind("\n", 0, t.lexpos)
+    t.col_start = t.lexpos - (last_nl + 1) if last_nl >= 0 else t.lexpos
+    t.col_end = t.col_start + (t.lexer.lexpos - t.lexpos)
+
+
 def t_LINE_COMMENT(t):
     r"//[^\n]*"
     pass
@@ -62,6 +68,14 @@ def t_BLOCK_COMMENT(t):
     t.lexer.lineno += t.value.count("\n")
 
 
+def t_BLOCK_COMMENT_UNTERMINATED(t):
+    r"/\*(.|\n)*"
+    t.lexer.errors.append(
+        f"[ERROR] Comentario de bloque sin cerrar en la línea {t.lineno}"
+    )
+    t.lexer.lineno += t.value.count("\n")
+
+
 def t_newline(t):
     r"\n+"
     t.lexer.lineno += len(t.value)
@@ -69,65 +83,177 @@ def t_newline(t):
 
 def t_GE(t):
     r">="
+    _set_columns(t)
     return t
 
 
 def t_LE(t):
     r"<="
+    _set_columns(t)
     return t
 
 
 def t_EQ(t):
     r"=="
+    _set_columns(t)
     return t
 
 
 def t_AND(t):
     r"&&"
+    _set_columns(t)
     return t
 
 
 def t_OR(t):
     r"\|\|"
+    _set_columns(t)
     return t
 
 
 def t_FLOAT_VALUE(t):
-    r"([0-9]+\.[0-9]+(e[+-]?[0-9]+)?|[0-9]+e[+-]?[0-9]+)"
+    r"((0|[1-9][0-9]*)\.[0-9]+(e[+-]?[0-9]+)?|(0|[1-9][0-9]*)e[+-]?[0-9]+)"
+    _set_columns(t)
+    t.value = float(t.value)
     return t
 
 
 def t_INT_VALUE(t):
     r"(0x[0-9A-F]+|0b[01]+|0[0-7]+|0|[1-9][0-9]*)"
+    _set_columns(t)
+    raw = t.value
+    if raw.startswith("0x") or raw.startswith("0X"):
+        t.value = int(raw, 16)
+    elif raw.startswith("0b") or raw.startswith("0B"):
+        t.value = int(raw, 2)
+    elif raw == "0":
+        t.value = 0
+    elif raw.startswith("0"):
+        t.value = int(raw, 8)
+    else:
+        t.value = int(raw)
     return t
 
 
 def t_CHAR_VALUE(t):
-    r"'([^\\\n']|\\.)'"
+    r"'([\x20-\x26\x28-\x5B\x5D-\xFF]|\\[\x20-\xFF])'"
+    _set_columns(t)
+    inner = t.value[1:-1]
+    if inner.startswith("\\"):
+        escape_map = {
+            "n": "\n",
+            "t": "\t",
+            "r": "\r",
+            "0": "\0",
+            "\\": "\\",
+            "'": "'",
+            '"': '"',
+        }
+        t.value = escape_map.get(inner[1], inner[1])
+    else:
+        t.value = inner
     return t
 
 
 def t_ID(t):
     r"[A-Za-z_][A-Za-z_0-9]*"
     t.type = reserved.get(t.value, "ID")
+    _set_columns(t)
+    if t.type == "TRUE":
+        t.value = True
+    elif t.type == "FALSE":
+        t.value = False
     return t
 
 
-t_ASSIGN = r"="
-t_GT = r">"
-t_LT = r"<"
-t_PLUS = r"\+"
-t_MINUS = r"-"
-t_TIMES = r"\*"
-t_DIVIDE = r"/"
-t_NOT = r"!"
-t_DOT = r"\."
-t_COMMA = r","
-t_SEMICOLON = r";"
-t_LPAREN = r"\("
-t_RPAREN = r"\)"
-t_LBRACE = r"\{"
-t_RBRACE = r"\}"
+def t_ASSIGN(t):
+    r"="
+    _set_columns(t)
+    return t
+
+
+def t_GT(t):
+    r">"
+    _set_columns(t)
+    return t
+
+
+def t_LT(t):
+    r"<"
+    _set_columns(t)
+    return t
+
+
+def t_PLUS(t):
+    r"\+"
+    _set_columns(t)
+    return t
+
+
+def t_MINUS(t):
+    r"-"
+    _set_columns(t)
+    return t
+
+
+def t_TIMES(t):
+    r"\*"
+    _set_columns(t)
+    return t
+
+
+def t_DIVIDE(t):
+    r"/"
+    _set_columns(t)
+    return t
+
+
+def t_NOT(t):
+    r"!"
+    _set_columns(t)
+    return t
+
+
+def t_DOT(t):
+    r"\."
+    _set_columns(t)
+    return t
+
+
+def t_COMMA(t):
+    r","
+    _set_columns(t)
+    return t
+
+
+def t_SEMICOLON(t):
+    r";"
+    _set_columns(t)
+    return t
+
+
+def t_LPAREN(t):
+    r"\("
+    _set_columns(t)
+    return t
+
+
+def t_RPAREN(t):
+    r"\)"
+    _set_columns(t)
+    return t
+
+
+def t_LBRACE(t):
+    r"\{"
+    _set_columns(t)
+    return t
+
+
+def t_RBRACE(t):
+    r"\}"
+    _set_columns(t)
+    return t
 
 
 def t_error(t):

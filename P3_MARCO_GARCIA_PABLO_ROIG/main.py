@@ -38,15 +38,8 @@ def main():
 
         with open(out_path, "w", encoding="utf-8") as out:
             for tok in lexer:
-                last_nl = data.rfind("\n", 0, tok.lexpos)
-                if last_nl < 0:
-                    col_start = tok.lexpos
-                else:
-                    col_start = tok.lexpos - (last_nl + 1)
-                lexeme = str(tok.value)
-                col_end = col_start + len(lexeme)
                 out.write(
-                    f"{tok.type}, {lexeme}, {tok.lineno}, {col_start}, {col_end}\n"
+                    f"{tok.type}, {tok.value}, {tok.lineno}, {tok.col_start}, {tok.col_end}\n"
                 )
         return 0
 

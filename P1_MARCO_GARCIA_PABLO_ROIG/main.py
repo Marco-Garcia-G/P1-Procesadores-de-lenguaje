@@ -3,13 +3,6 @@ import sys
 from lexer import build_lexer
 
 
-def find_column(text, lexpos):
-    last_nl = text.rfind("\n", 0, lexpos)
-    if last_nl < 0:
-        return lexpos
-    return lexpos - (last_nl + 1)
-
-
 def output_path(input_path: str) -> str:
     base, _ext = os.path.splitext(input_path)
     return base + ".token"
@@ -35,10 +28,7 @@ def main():
 
     with open(out_path, "w", encoding="utf-8") as out:
         for tok in lexer:
-            col_start = find_column(data, tok.lexpos)
-            lexeme = str(tok.value)
-            col_end = col_start + len(lexeme)
-            line = f"{tok.type}, {lexeme}, {tok.lineno}, {col_start}, {col_end}\n"
+            line = f"{tok.type}, {tok.value}, {tok.lineno}, {tok.col_start}, {tok.col_end}\n"
             out.write(line)
 
 

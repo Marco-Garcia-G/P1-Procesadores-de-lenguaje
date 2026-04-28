@@ -101,7 +101,7 @@ class IRGenerator:
     def emit_expression(self, expr):
         kind = expr["kind"]
         if kind == "literal":
-            return str(expr["value"])
+            return self.format_literal(expr)
         if kind == "id":
             return expr["name"]
         if kind == "field":
@@ -129,6 +129,15 @@ class IRGenerator:
             self.emit(f"{temp} = {left} {expr['op']} {right}")
             return temp
         return "<expr>"
+
+    def format_literal(self, expr):
+        value = expr["value"]
+        literal_type = expr.get("literal_type")
+        if literal_type == "boolean":
+            return "true" if value else "false"
+        if literal_type == "char":
+            return f"'{value}'"
+        return str(value)
 
     def emit_lvalue(self, expr):
         if expr["kind"] == "id":
